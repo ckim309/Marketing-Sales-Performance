@@ -100,7 +100,7 @@ SELECT
 	-- ROI and profit margin for potential sales in paper
 	CASE
 		WHEN Subcat = 'Tables'
-		THEN (SUM(Revenue)-SUM(Cost))/(SUM(Cost))
+		THEN (SUM(Revenue)-SUM(Cost))/SUM(Cost)
 		END AS ROI_T,
 	CASE
 		WHEN Subcat = 'Tables'
@@ -136,3 +136,64 @@ SELECT
 FROM Store..data1
 WHERE State LIKE 'Cal%' AND (SubCat = 'Paper'  OR SubCat = 'Tables')
 GROUP BY SubCat, Discount;
+
+-- decreasing sales discount to 10% instead of 20% for tables
+SELECT  	
+	SubCat, 
+	(Discount/2) AS NewDiscount,
+	SUM(Quantity) AS TotalSold,
+	ROUND((SUM(Cost)/SUM(Quantity)),2) AS AvgCostPerQuantity,
+	-- potential revenue, profit
+	ROUND(((SUM(RevenueWithDiscount)/SUM(Quantity))/(1-(Discount/2))),2) AS Dis10_RevenuePerQuantity,
+	ROUND(((SUM(Revenue)-(SUM(Revenue)*(Discount/2))- SUM(Cost))/SUM(Quantity)),2) AS Dis10_ProfitPerQuantity,
+	ROUND(SUM(RevenueWithDiscount),2) AS CurrentRevenueWithDiscount,
+	ROUND(SUM(Cost),2) AS CurrentCost,
+	ROUND(SUM(Profit),2) AS CurrentProfit,
+	ROUND(SUM(Revenue)-(SUM(Revenue)*(Discount/2)),2) AS Revenue10Discount,
+	ROUND((SUM(Revenue)-(SUM(Revenue)*(Discount/2)))- SUM(Cost),2) AS Profit10Discount,
+	-- ROI and profit margin
+	ROUND(((SUM(Revenue)-(SUM(Revenue)*(Discount/2)))- SUM(Cost))/SUM(Cost),2) AS Dis10_ROI,
+	ROUND(((SUM(Revenue)-(SUM(Revenue)*(Discount/2)))- SUM(Cost))/(SUM(Revenue)-(SUM(Revenue)*(Discount/2))),4) AS Dis10_ProfitMargin
+FROM Store..data1
+WHERE State LIKE 'Cal%' AND SubCat = 'Tables'
+GROUP BY SubCat, Discount;
+
+-- CREATING TABLE TO ADD PREDICTIONS
+CREATE TABLE #future (
+	SubCat nvarchar(255), 
+	Discount float, 
+	TotalQuantity float, 
+	TotalRevenue float, 
+	TotalCost float, 
+	TotalProfit float, 
+	ProfitMargin float, 
+	ROI_Percent float,
+)
+INSERT INTO #future
+SELECT
+	DISTINCT(SubCat),
+	ROUND(AVG(Discount),2) AS Discount,
+	ROUND(SUM(Quantity),2) AS TotalQuantity,
+	ROUND(SUM(RevenueWithDiscount),2) AS TotalRevenue,
+	ROUND(SUM(Cost),2) AS TotalCost,
+	ROUND(SUM(Profit),2) AS TotalProfit,
+	ROUND((SUM(Profit)/SUM(RevenueWithDiscount)),4) AS ProfitMargin,
+	ROUND((SUM(Profit)/SUM(Cost)),4) AS ROI_Percent
+FROM Store..data1
+WHERE State LIKE 'Cal%'
+GROUP BY SubCat
+-- adding 10% discounted tables, no discount tables, newly invested paper
+INSERT INTO #future (SubCat, Discount, TotalQuantity, TotalRevenue, 
+	TotalCost, TotalProfit, ProfitMargin, ROI_Percent)
+VALUES ('Tables 10', 0.1, 281, 40887.21, 36647.74, 4239.47, 0.1037, 0.12),
+	('Tables_NoDisc', NULL, 281, 45430.23, 36647.74, 8782.49, 0.1933, 0.2396),
+	('New_Paper', NULL, 5643, 86681.34, 45428.18, 41253.16, 0.47592, 0.9081)
+-- percentage of cost, revenue and profit each category generates
+SELECT SubCat, Discount, TotalQuantity, TotalRevenue, 
+	TotalCost, TotalProfit, ProfitMargin, ROI_Percent,
+	ROUND((SUM(TotalCost)/444096.33),4)AS PercentageOfResourcesUsed,
+	ROUND((SUM(TotalRevenue)/630686.42),4) As PercentageOfRevenue,
+	ROUND((SUM(TotalProfit)/130656.51),4) As PercentageOfProfit
+FROM #future
+GROUP BY SubCat, Discount, TotalQuantity, TotalRevenue, 
+	TotalCost, TotalProfit, ProfitMargin, ROI_Percent
